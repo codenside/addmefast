@@ -1,0 +1,122 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""
+Copyright (c) 2018 hackbox developers (http://hackbox.io)
+See the file 'LICENSE' for copying permission
+"""
+
+import json
+import os
+import sys
+import random
+
+from selenium import webdriver
+from argparse import ArgumentParser
+from pyvirtualdisplay import Display
+
+from utils import log
+from bots import facebook
+
+
+def main():
+    """
+    Addmefast starting point and initialize
+    """
+
+    if not os.path.exists("./.addmefastrc"):
+        f = open("./.addmefastrc", "w+")
+        f.write("{}")
+        f.close()
+
+    parser = ArgumentParser(description="Addmefast Bot")
+    parser.add_argument("--reset", nargs="?", const="1", help="Clear all account and configs")
+    parser.add_argument("--add-facebook", nargs="?", const="1", help="Add a facebook account to use by addmefast")
+    parser.add_argument("--add-addmefast", nargs="?", const="1", help="Add a addmefast account")
+    parser.add_argument("--email", help="Email address to add")
+    parser.add_argument("--password", help="Password to add")
+    parser.add_argument("--type", help="t of bot to run (ex: facebook)")
+    parser.add_argument("--run", nargs="?", const="1", help="Run the bot (required a t)")
+    args = parser.parse_args()
+
+    if args.add_facebook:
+        add_account(args.email, args.password, "facebook")
+    elif args.reset:
+        update_config({})
+    elif args.run:
+        run(args.type)
+    elif args.add_addmefast:
+        add_account(args.email, args.password, "addmefast")
+
+
+def run(t):
+    config = get_config()
+
+    if not config.get("addmefast", None):
+        log.error("Please at least one addmefast account")
+        sys.exit(1)
+
+    if not t:
+        log.error("t of bot required to run")
+        sys.exit(1)
+
+    display = Display(visible=0, size=(800, 600))
+    display.start()
+
+    browser = webdriver.Chrome("./chromedriver")
+    log.status("Opening URL...")
+    browser.get("http://addmefast.com/")
+
+    log.status("Trying to sign in...")
+    account = random.choice(config["addmefast"])
+    browser.execute_script("""
+    document.getElementsByClassName("email")[0].value = "{}";
+    document.getElementsByClassName("password")[0].value = "{}";
+    document.querySelector("input[name='login_button']").click();
+    """.format(account["email"], account["password"]))
+    log.ok("Successfully signed in")
+
+    if t == "facebook":
+        if not config.get("facebook", None):
+            log.error("No facebook account found")
+            sys.exit(1)
+        account = random.choice(config["facebook"])
+        facebook.run(browser, account)
+
+
+def get_config():
+    f = open("./.addmefastrc", "r")
+    obj = json.loads(f.read())
+    f.close()
+
+    return obj
+
+
+def update_config(config):
+    f = open("./.addmefastrc", "w+")
+    f.write(json.dumps(config))
+    f.close()
+
+
+def add_account(email, password, t):
+    if not email or not password:
+        log.error("Email and password required")
+        sys.exit(1)
+
+    config = get_config()
+    if not config.get(t, None):
+        config[t] = []
+
+    for account in config[t]:
+        if email in account["email"]:
+            log.error("That account already exist")
+            sys.exit(1)
+
+    config[t].append({"email": email, "password": password})
+    update_config(config)
+
+    log.ok("Alright! new {} account added".format(t))
+
+
+if __name__ == "__main__":
+    main()
